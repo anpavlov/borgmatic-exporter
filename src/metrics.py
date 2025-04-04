@@ -96,6 +96,41 @@ def create_metrics(registry):
         registry=registry,
     )
 
+    Gauge(
+        "borg_last_backup_size_diff",
+        "Size difference of the last Borg backup from previous backup",
+        ["repository"],
+        registry=registry,
+    )
+
+    Gauge(
+        "borg_last_backup_files_diff",
+        "Amount of files in the last Borg backup differed from previous backup",
+        ["repository"],
+        registry=registry,
+    )
+
+    Gauge(
+        "borg_last_backup_deduplicated_compressed_size_diff",
+        "Size difference of the deduplicated and compressed last Borg backup from previous backup",
+        ["repository"],
+        registry=registry,
+    )
+
+    Gauge(
+        "borg_last_backup_compressed_size_diff",
+        "Size diff of the compressed last Borg backup from previous backup",
+        ["repository"],
+        registry=registry,
+    )
+
+    Gauge(
+        "borg_previous_backup_timestamp",
+        "Timestamp of the previous Borg backup",
+        ["repository"],
+        registry=registry,
+    )
+
     return registry
 
 
@@ -115,7 +150,7 @@ def collect(borgmatic_configs: list, registry):
     borgmatic_configs = " -c ".join(borgmatic_configs)
     # Overall repo info and last archive only
     repos = run_command(
-        f"borgmatic -c {borgmatic_configs} --verbosity -1 borg info --bypass-lock --json --last 1",
+        f"borgmatic -c {borgmatic_configs} --verbosity -1 borg info --bypass-lock --json --last 2",
         tmp_env,
     )
     # All archives
@@ -227,6 +262,75 @@ def collect(borgmatic_configs: list, registry):
                 labels=labels,
                 value=latest_archive["stats"]["original_size"],
             )
+
+            if len(r["archives"]) > 1:
+                previous_archive = r["archives"][-2]
+
+                set_metric(
+                    registry=registry,
+                    metric="borg_last_backup_files_diff",
+                    labels=labels,
+                    value=latest_archive["stats"]["nfiles"]-previous_archive["stats"]["nfiles"],
+                )
+
+                set_metric(
+                    registry=registry,
+                    metric="borg_last_backup_deduplicated_compressed_size_diff",
+                    labels=labels,
+                    value=latest_archive["stats"]["deduplicated_size"]-previous_archive["stats"]["deduplicated_size"],
+                )
+
+                set_metric(
+                    registry=registry,
+                    metric="borg_last_backup_compressed_size_diff",
+                    labels=labels,
+                    value=latest_archive["stats"]["compressed_size"]-previous_archive["stats"]["compressed_size"],
+                )
+
+                set_metric(
+                    registry=registry,
+                    metric="borg_last_backup_size_diff",
+                    labels=labels,
+                    value=latest_archive["stats"]["original_size"]-previous_archive["stats"]["original_size"],
+                )
+
+                set_metric(
+                    registry=registry,
+                    metric="borg_previous_backup_timestamp",
+                    labels=labels,
+                    value=arrow.get(previous_archive["end"])
+                    .replace(tzinfo="local")
+                    .timestamp(),
+                )
+            else:
+                set_metric(
+                    registry=registry,
+                    metric="borg_last_backup_files_diff",
+                    labels=labels,
+                    value=latest_archive["stats"]["nfiles"],
+                )
+
+                set_metric(
+                    registry=registry,
+                    metric="borg_last_backup_deduplicated_compressed_size_diff",
+                    labels=labels,
+                    value=latest_archive["stats"]["deduplicated_size"],
+                )
+
+                set_metric(
+                    registry=registry,
+                    metric="borg_last_backup_compressed_size_diff",
+                    labels=labels,
+                    value=latest_archive["stats"]["compressed_size"],
+                )
+
+                set_metric(
+                    registry=registry,
+                    metric="borg_last_backup_size_diff",
+                    labels=labels,
+                    value=latest_archive["stats"]["original_size"],
+                )
+
 
 
 def json_multi_parse(fileobj, decoder=json.JSONDecoder(), buffersize=2048):
